@@ -14,22 +14,18 @@ from scipy.ndimage.measurements import label
 
 class Config(object):
     def __init__(self):
-        self.cspace = 'YCrCb'  # 'HSV' 'YCrCb'
+        self.cspace = 'YCrCb'  # 'HSV' 'YCrCb' 'RGB' ...
         self.use_svd = True
         self.svd_K = 75
         self.spatial_size = (32, 32)
 
-        self.hist_bins = 64
+        self.hist_bins = 32
         self.hist_range = (0, 256)
 
         self.orient = 7
         self.pix_per_cell = 8
         self.cell_per_block = 2
         self.hog_channel = 'ALL'  # 'ALL' or 'GRAY'
-
-        self.ystart = 400
-        self.ystop = 700
-        self.scale_list = [1, 1.5, 2, 2.5]
 
     def show(self):
         print('color space   : {}'.format(self.cspace))
@@ -45,10 +41,6 @@ class Config(object):
         print('pix per cell  : {}'.format(self.pix_per_cell))
         print('cell per block: {}'.format(self.cell_per_block))
         print('hog channel   : {}'.format(self.hog_channel))
-        print('--- Car Detection ---')
-        print('ROI ystart    : {}'.format(self.ystart))
-        print('ROI ystop     : {}'.format(self.ystop))
-        print('window scale  : {}'.format(self.scale_list))
 
 
 # Define a function to return some characteristics of the dataset
@@ -246,13 +238,24 @@ def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
     return imcopy
 
 
-def find_cars_multi_scaler(image, config, svd_subspace, svm_model):
+def find_cars_multi_scaler(image, svm_model, scaler_list, roi, vis=False):
+    '''
+    @image: input image
+    @svm_model: svm related parameters, include svc, X_scaler, features' config
+    @scaler_list: image subsampling scaler list
+    @roi: a tuple (ystart, ystop) represents region of interest
+    @vis: visible or not, if True, will plot
+    return hot_windows
+    '''
+    config = svm_model['hyperconfig']
+    svd_subspace = svm_model['svd_subspace']
     cspace = config.cspace
     ystart = config.ystart
     ystop = config.ystop
-    scaler_list = config.scale_list
+    # scaler_list = config.scale_list
     svc = svm_model['svc']
     X_scaler = svm_model['X_scaler']
+    ystart, ystop = roi
 
     if cspace != 'RGB':
         if cspace == 'HSV':
@@ -278,6 +281,10 @@ def find_cars_multi_scaler(image, config, svd_subspace, svm_model):
             _ystart = int((ystart + ystop) / 2)
             _ystop = ystop
         hot_windows.extend(find_cars(feature_image, config, svd_subspace, scaler, svc, X_scaler, _ystart, _ystop))
+    if vis:
+        draw_img = draw_boxes(image, hot_windows)
+        plt.imshow(draw_img)
+    return hot_windows
 
 
 def find_cars(feature_image, config, svd_subspace, scaler, svc, X_scaler, ystart, ystop):
@@ -375,7 +382,7 @@ def get_labeled_bboxes(img, labels):
     return bboxes
 
 
-def get_heatmap(img, hot_windows, threshold):
+def get_heatmap(img, hot_windows, threshold, vis=False):
     '''
     return bboxes, heatmap
     '''
@@ -391,6 +398,15 @@ def get_heatmap(img, hot_windows, threshold):
     # Find final boxes from heatmap using label function
     labels = label(heatmap)
     bboxes = get_labeled_bboxes(np.copy(img), labels)
+    if vis:
+        plt.figure(figsize=(15, 10))
+        plt.subplot(121)
+        img = draw_boxes(img, bboxes)
+        plt.imshow(img)
+        plt.title('Car Positions')
+        plt.subplot(122)
+        plt.imshow(heatmap, cmap='hot')
+        plt.title('Heat Map')
     return bboxes, heatmap
 
 
